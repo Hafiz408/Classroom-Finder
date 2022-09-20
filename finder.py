@@ -102,7 +102,6 @@ def schedule_class():
                         bookerInfo['hall'] = classroom
                         global bookKeeping
                         bookKeeping = updateBookKeeping(bookerInfo, bookKeeping)
-                        st.dataframe(bookKeeping)
                         st.session_state.button_clicked = False
                         st.balloons()
                 else:
