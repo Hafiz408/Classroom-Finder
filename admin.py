@@ -1,7 +1,16 @@
 import streamlit as st
 import pandas as pd
+import io
 
-from finder import returnBookKeeping, downloadBookKeeping, downloadSchedule
+from finder import returnBookKeeping, returnSchedule
+
+buffer = io.BytesIO()
+
+def convert_to_excel(df):
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df.to_excel(writer)
+        writer.save()
+        return buffer
 
 def viewer():
     cols = st.columns([1,8,1])
@@ -9,17 +18,14 @@ def viewer():
     st.write("")
 
     bookKeeping = returnBookKeeping()
+    schedule = returnSchedule()
 
     st.subheader("Booking Log")
     st.dataframe(bookKeeping)
 
-    st.write("")
-    cols = st.columns([3,3,3,3])
-    log_btn = cols[1].button(label="Download Logs")
-    schedule_btn = cols[2].button(label="Download Schedule")
+    if not bookKeeping.empty:
+        log_data = convert_to_excel(bookKeeping)
 
-    if log_btn:
-        downloadBookKeeping()
-    
-    if schedule_btn:
-        downloadSchedule()
+        st.write("")
+        cols = st.columns([3,3,3])
+        cols[1].download_button(label="Download Logs", data=log_data, file_name="Booking log.xlsx", mime="application/vnd.ms-excel")

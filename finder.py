@@ -16,18 +16,15 @@ bookKeeping = pd.DataFrame()
 def callback():
     st.session_state.button_clicked = True
 
-def downloadBookKeeping():
-    bookKeeping.to_excel('Booking log.xlsx')
-
-def downloadSchedule():
-    df.to_excel('Hall schedule.xlsx')
-
 def updateBookKeeping(record, bookKeeping):
     bookKeeping = bookKeeping.append(record, ignore_index=True)
     return bookKeeping
 
 def returnBookKeeping():
     return bookKeeping
+
+def returnSchedule():
+    return df
 
 def classroomFinder(day,hour,capacity,block):
   grp = df.groupby(['day']).get_group(day)
@@ -95,7 +92,7 @@ def schedule_class():
             book_button = cols[1].button(label="Book hall")
 
             if book_button:
-                if len(classroom) < 5:
+                if len(classroom) < 6:
                     if bookClass(classroom, day, **bookerInfo):
                         st.success('Classroom {} booked for hour {} !!'.format(classroom, hour))
                         bookerInfo['day'] = day
