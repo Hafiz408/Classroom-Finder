@@ -1,13 +1,16 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+
+from constants import courses, hours
 
 def read_excel_sheets():
-  df = pd.DataFrame()
-  for sheet in ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']:
-    day_df = pd.read_excel('Classroom schedule.xlsx', sheet_name=sheet)
-    day_df['day'] = sheet.capitalize()
-    df = df.append(day_df, ignore_index=True)
-  return df
+    df = pd.DataFrame()
+    for sheet in ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']:
+        day_df = pd.read_excel('Classroom schedule.xlsx', sheet_name=sheet)
+        day_df['day'] = sheet.capitalize()
+        df = df.append(day_df, ignore_index=True)
+    return df
 
 df = read_excel_sheets()
 df.dropna(subset=['Hall\Hour'], inplace=True)
@@ -17,10 +20,19 @@ df['hall'] = df['Hall\Hour'].str.split('(').str[0].str[:-1]
 df.drop(columns='Hall\Hour', axis=1, inplace=True)
 df['block'] = df['hall'].str[0]
 
+blocks = list(sorted(df['block'].unique()))
+blocks.insert(0, 'Any')
+
 bookKeeping = pd.DataFrame()
 
 def callback():
     st.session_state.button_clicked = True
+
+def callback2():
+    if st.session_state.continuous_hour_checkbox:
+        st.session_state.continuous_hour_checkbox = False
+    else:
+        st.session_state.continuous_hour_checkbox = True
 
 def updateBookKeeping(record, bookKeeping):
     bookKeeping = bookKeeping.append(record, ignore_index=True)
@@ -33,42 +45,81 @@ def returnSchedule():
     return df
 
 def classroomFinder(day,hour,capacity,block):
-  grp = df.groupby(['day']).get_group(day)
-  if len(block) > 0:
-    if 'Any' in block:
-        grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull())]
+    df.replace('nan', np.nan, inplace=True)
+    grp = df.groupby(['day']).get_group(day)
+    if not isinstance(hour,int):
+        hours = [ i for i in range(int(hour[0]), int(hour[1])+1)]
+        cols = hours.copy()
+        cols.insert(0, 'hall')
+        if len(block) > 0:
+            if 'Any' in block:
+                grp = grp[cols][(grp['capacity'] >= capacity) & (grp[hours].isnull().all(axis=1))]
+            else:
+                grp = grp[cols][(grp['capacity'] >= capacity) & (grp[hours].isnull().all(axis=1)) & (grp['block'].isin(block))]
+        else:
+            grp = grp[cols][(grp['capacity'] >= capacity) & (grp[hours].isnull().all(axis=1))]
     else:
-        grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull()) & (grp['block'].isin(block))]
-  else:
-    grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull())]
-  res = list(grp['hall'])
-  return res
+        if len(block) > 0:
+            if 'Any' in block:
+                grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & ((grp[hour].isnull()) | (grp[hour] == 'nan'))]
+            else:
+                grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & ((grp[hour].isnull()) | (grp[hour] == 'nan')) & (grp['block'].isin(block))]
+        else:
+            grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & ((grp[hour].isnull()) | (grp[hour] == 'nan'))]
+    res = list(grp['hall'])
+    return res
 
 def bookClass(classroom, **kwargs):
+    df.replace(np.nan, 'nan', inplace=True)
     day = kwargs['day']
-    hour = int(kwargs['hour'])
-    df[hour][(df['day'] == day) & (df['hall'] == classroom)] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
+    hour = kwargs['hour']
+    if not isinstance(hour,int):
+        hours = [ i for i in range(int(hour[0]), int(hour[1])+1)]
+        df.loc[(df['day'] == day) & (df['hall'] == classroom), hours] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
+    else:
+        df[hour][(df['day'] == day) & (df['hall'] == classroom)] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
     return True
 
 def schedule_class():
     if 'button_clicked' not in st.session_state:
         st.session_state.button_clicked = False
     
+    if 'continuous_hour_checkbox' not in st.session_state:
+        st.session_state.continuous_hour_checkbox = False
+    
     cols = st.columns([1,8,1])
     cols[1].title("|.......  Finder  ......|")
     st.write("")
 
     name = st.text_input("Name :")
-    rollNo = st.text_input("Roll No :")
-    year = st.selectbox("Year :",['', '1', '2', '3', '4', '5'])
-    course = st.selectbox("Course :",['', 'DS', 'TCS', 'SS'])
-    section = st.selectbox("Section :",['', 'None', 'G1', 'G2'])
-    phone = st.text_input("Phone No :")
-    date = st.date_input('Day :')
-    hour = st.selectbox("Hour :",['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'])
 
-    capacity = st.selectbox("Minimun Capacity :",['Optional', '< 40', '40', '60', '80', '> 100'])
-    block = st.multiselect("Block :",['Any', 'A', 'G', 'J', 'E'])
+    cols = st.columns([1,1])
+    rollNo = cols[0].text_input("Roll No :")
+    year = cols[1].selectbox("Year :",['', '1', '2', '3', '4', '5'])
+
+    cols = st.columns([1,1])
+    course = cols[0].selectbox("Course :", sorted(courses))
+    section = cols[1].selectbox("Section :",['', 'None', 'G1', 'G2'])
+
+    phone = st.text_input("Phone No :")
+
+    cols = st.columns([1,1])
+    date = cols[0].date_input('Day :')
+    hour = cols[1].selectbox("Hour :", hours, disabled=st.session_state.continuous_hour_checkbox)
+    
+    cols = st.columns([1,1])
+    continuous_hour_checkbox = cols[1].checkbox('Book for continuous hours', on_change=callback2)
+    start_hour = end_hour = ''
+    if continuous_hour_checkbox:
+        cols = st.columns([1,1])
+        start_hour = cols[0].selectbox("Start hour :", hours)
+        end_hours = hours[hours.index(start_hour):]
+        end_hours.insert(0, '')
+        end_hour = cols[1].selectbox("End hour :", end_hours)
+
+    cols = st.columns([1,1])
+    capacity = cols[0].selectbox("Minimun Capacity :",['Optional', '< 40', '40', '60', '80', '> 100'])
+    block = cols[1].multiselect("Block :", blocks, default='Any')
 
     day = date.strftime('%A')
 
@@ -82,11 +133,16 @@ def schedule_class():
         if day == 'Saturday' or day == 'Sunday':
             st.warning("Can't book hall on {}".format(day))
             st.session_state.button_clicked = False
-        elif len(name) == 0 or len(rollNo) == 0 or len(year) == 0 or len(course) == 0 or len(section) == 0 or len(phone) == 0 or not date or len(hour) == 0:
+        elif len(name) == 0 or len(rollNo) == 0 or len(year) == 0 or len(course) == 0 or len(section) == 0 or len(phone) == 0 or not date or (len(hour) == 0 and (len(start_hour) == 0 or len(end_hour) == 0)):
             st.warning('Fill the required details !!')
             st.session_state.button_clicked = False
         else:
-            hour = int(bookerInfo['hour'])
+            if len(bookerInfo['hour']) != 0:
+                hour = int(bookerInfo['hour'])
+                bookerInfo['hour'] = hour
+            else:
+                hour = [int(start_hour), int(end_hour)]
+                bookerInfo['hour'] = hour
             block = bookerInfo['block']
             capacity = bookerInfo['capacity']
             if capacity == 'Optional':
@@ -97,13 +153,15 @@ def schedule_class():
             freeRooms = classroomFinder(day, hour, capacity, block)
             if len(freeRooms) == 0:
                 st.error('No halls available !!')
+                st.session_state.book_btn = True
             else:
                 freeRooms.insert(0,'Choose anyone of the available halls from dropdown')
                 classroom = st.selectbox("Available Halls :", freeRooms)
+                st.session_state.book_btn = False
 
             st.write("")
             cols = st.columns([3,1,3])
-            book_button = cols[1].button(label="Book hall")
+            book_button = cols[1].button(label="Book hall", disabled=st.session_state.book_btn)
 
             if book_button:
                 if len(classroom) < 6:
