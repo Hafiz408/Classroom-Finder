@@ -1,15 +1,21 @@
 import streamlit as st
 import pandas as pd
 
-df = pd.read_excel('Classrooms excel.xlsx', sheet_name='Sheet2')
-df.drop(columns=df.columns[-5:], axis=1, inplace=True)
+def read_excel_sheets():
+  df = pd.DataFrame()
+  for sheet in ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']:
+    day_df = pd.read_excel('Classroom schedule.xlsx', sheet_name=sheet)
+    day_df['day'] = sheet.capitalize()
+    df = df.append(day_df, ignore_index=True)
+  return df
+
+df = read_excel_sheets()
 df.dropna(subset=['Hall\Hour'], inplace=True)
 df['capacity'] = df['Hall\Hour'].str.split('(').str[1].str[:-1]
 df['capacity'] = pd.to_numeric(df['capacity'])
 df['hall'] = df['Hall\Hour'].str.split('(').str[0].str[:-1]
 df.drop(columns='Hall\Hour', axis=1, inplace=True)
 df['block'] = df['hall'].str[0]
-df['day'] = 'Friday'
 
 bookKeeping = pd.DataFrame()
 
@@ -29,13 +35,17 @@ def returnSchedule():
 def classroomFinder(day,hour,capacity,block):
   grp = df.groupby(['day']).get_group(day)
   if len(block) > 0:
-    grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull()) & (grp['block'].isin(block))]
+    if 'Any' in block:
+        grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull())]
+    else:
+        grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull()) & (grp['block'].isin(block))]
   else:
     grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & (grp[hour].isnull())]
   res = list(grp['hall'])
   return res
 
-def bookClass(classroom, day, **kwargs):
+def bookClass(classroom, **kwargs):
+    day = kwargs['day']
     hour = int(kwargs['hour'])
     df[hour][(df['day'] == day) & (df['hall'] == classroom)] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
     return True
@@ -60,18 +70,22 @@ def schedule_class():
     capacity = st.selectbox("Minimun Capacity :",['Optional', '< 40', '40', '60', '80', '> 100'])
     block = st.multiselect("Block :",['Any', 'A', 'G', 'J', 'E'])
 
-    bookerInfo = { 'name': name, 'rollNo': rollNo, 'year': year, 'course': course, 'section': section, 'phone': phone, 'date': date, 'hour': hour, 'capacity': capacity, 'block': block }
+    day = date.strftime('%A')
+
+    bookerInfo = { 'name': name, 'rollNo': rollNo, 'year': year, 'course': course, 'section': section, 'phone': phone, 'date': date, 'day': day, 'hour': hour, 'capacity': capacity, 'block': block }
 
     st.write("")
     cols = st.columns([3,2,3])
     ok = cols[1].button(label="Find Available Halls", on_click=callback)
 
     if ok or st.session_state.button_clicked:
-        if len(name) == 0 or len(rollNo) == 0 or len(year) == 0 or len(course) == 0 or len(section) == 0 or len(phone) == 0 or not date or len(hour) == 0:
+        if day == 'Saturday' or day == 'Sunday':
+            st.warning("Can't book hall on {}".format(day))
+            st.session_state.button_clicked = False
+        elif len(name) == 0 or len(rollNo) == 0 or len(year) == 0 or len(course) == 0 or len(section) == 0 or len(phone) == 0 or not date or len(hour) == 0:
             st.warning('Fill the required details !!')
             st.session_state.button_clicked = False
         else:
-            day = bookerInfo['date'].strftime('%A')
             hour = int(bookerInfo['hour'])
             block = bookerInfo['block']
             capacity = bookerInfo['capacity']
@@ -93,9 +107,8 @@ def schedule_class():
 
             if book_button:
                 if len(classroom) < 6:
-                    if bookClass(classroom, day, **bookerInfo):
+                    if bookClass(classroom, **bookerInfo):
                         st.success('Classroom {} booked for hour {} !!'.format(classroom, hour))
-                        bookerInfo['day'] = day
                         bookerInfo['hall'] = classroom
                         global bookKeeping
                         bookKeeping = updateBookKeeping(bookerInfo, bookKeeping)
