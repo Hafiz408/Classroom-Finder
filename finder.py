@@ -169,7 +169,7 @@ def schedule_class():
                 st.session_state.book_btn = True
             else:
                 freeRooms.insert(0,'Choose anyone of the available halls from dropdown')
-                classroom = st.selectbox("Available Halls :", freeRooms)
+                classroom = st.selectbox("Available Halls :", sorted(freeRooms))
                 st.session_state.book_btn = False
 
             st.write("")
