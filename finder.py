@@ -1,3 +1,4 @@
+import datetime
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -44,6 +45,17 @@ def returnBookKeeping():
 def returnSchedule():
     return df
 
+def check_booked_halls(freeRooms, **kwargs):
+    if bookKeeping.empty or (kwargs['date'] not in bookKeeping['date'].values):
+        return freeRooms
+    grp = bookKeeping.groupby(['date']).get_group(kwargs['date'])
+    start_hour, end_hour = kwargs['start hour'], kwargs['end hour']
+    grp = grp[( ((grp['start hour'] <= start_hour) & (grp['end hour'] >= end_hour)) | ((grp['start hour'] <= start_hour) & (grp['end hour'] <= end_hour)) | ((grp['start hour'] >= start_hour) & (grp['end hour'] <= end_hour)) | ((grp['start hour'] >= start_hour) & (grp['end hour'] >= end_hour)) ) & ~((grp['end hour'] < start_hour) | (grp['start hour'] > end_hour))]
+    res = list(grp['hall'])
+    freeRooms = list(set(freeRooms).difference(res))
+    return freeRooms
+
+
 def classroomFinder(day,hour,capacity,block):
     df.replace('nan', np.nan, inplace=True)
     grp = df.groupby(['day']).get_group(day)
@@ -68,17 +80,6 @@ def classroomFinder(day,hour,capacity,block):
             grp = grp[['hall',hour]][(grp['capacity'] >= capacity) & ((grp[hour].isnull()) | (grp[hour] == 'nan'))]
     res = list(grp['hall'])
     return res
-
-def bookClass(classroom, **kwargs):
-    df.replace(np.nan, 'nan', inplace=True)
-    day = kwargs['day']
-    hour = kwargs['hour']
-    if not isinstance(hour,int):
-        hours = [ i for i in range(int(hour[0]), int(hour[1])+1)]
-        df.loc[(df['day'] == day) & (df['hall'] == classroom), hours] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
-    else:
-        df[hour][(df['day'] == day) & (df['hall'] == classroom)] = 'BOOKED' + '_' + kwargs['year'] + '_' + kwargs['course'].upper() + '-' + kwargs['section']
-    return True
 
 def schedule_class():
     if 'button_clicked' not in st.session_state:
@@ -111,15 +112,20 @@ def schedule_class():
     continuous_hour_checkbox = cols[1].checkbox('Book for continuous hours', on_change=callback2)
     start_hour = end_hour = ''
     if continuous_hour_checkbox:
+        hour = ''
         cols = st.columns([1,1])
         start_hour = cols[0].selectbox("Start hour :", hours)
-        end_hours = hours[hours.index(start_hour):]
+        end_hours = hours[hours.index(start_hour)+1:]
         end_hours.insert(0, '')
         end_hour = cols[1].selectbox("End hour :", end_hours)
 
     cols = st.columns([1,1])
     capacity = cols[0].selectbox("Minimun Capacity :",['Optional', '< 40', '40', '60', '80', '> 100'])
     block = cols[1].multiselect("Block :", blocks, default='Any')
+
+    today = datetime.date.today()
+    if date < today:
+        st.warning('Attempting Time travel ?')
 
     day = date.strftime('%A')
 
@@ -142,7 +148,8 @@ def schedule_class():
                 bookerInfo['hour'] = hour
             else:
                 hour = [int(start_hour), int(end_hour)]
-                bookerInfo['hour'] = hour
+                bookerInfo['start hour'] = hour[0]
+                bookerInfo['end hour'] = hour[1]
             block = bookerInfo['block']
             capacity = bookerInfo['capacity']
             if capacity == 'Optional':
@@ -151,6 +158,12 @@ def schedule_class():
                 capacity = int(capacity[-3:])
 
             freeRooms = classroomFinder(day, hour, capacity, block)
+            if bookerInfo['hour'] != '':
+                bookerInfo['start hour']= bookerInfo['end hour'] = bookerInfo['hour']
+            bookerInfo.pop('hour')
+
+            freeRooms = check_booked_halls(freeRooms, **bookerInfo)
+
             if len(freeRooms) == 0:
                 st.error('No halls available !!')
                 st.session_state.book_btn = True
@@ -165,12 +178,11 @@ def schedule_class():
 
             if book_button:
                 if len(classroom) < 6:
-                    if bookClass(classroom, **bookerInfo):
-                        st.success('Classroom {} booked for hour {} !!'.format(classroom, hour))
-                        bookerInfo['hall'] = classroom
-                        global bookKeeping
-                        bookKeeping = updateBookKeeping(bookerInfo, bookKeeping)
-                        st.session_state.button_clicked = False
-                        st.balloons()
+                    st.success('Classroom {} booked for hour {} !!'.format(classroom, hour))
+                    bookerInfo['hall'] = classroom
+                    global bookKeeping
+                    bookKeeping = updateBookKeeping(bookerInfo, bookKeeping)
+                    st.session_state.button_clicked = False
+                    st.balloons()
                 else:
                     st.warning('Choose anyone of the available halls !!')
